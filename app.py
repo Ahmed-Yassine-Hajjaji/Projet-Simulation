@@ -152,8 +152,13 @@ def fr(x, dec=0, signed=False):
 # ─────────────────────────────────────────────────────────────────────────────
 # MOTEUR : exécution mise en cache
 # ─────────────────────────────────────────────────────────────────────────────
+# Jeton de version du moteur : à incrémenter dès que la logique de simulation
+# change. Il entre dans la clé de cache, ce qui force le recalcul après un
+# déploiement (sinon @st.cache_data resservirait d'anciens résultats).
+MOTEUR_VERSION = 2
+
 @st.cache_data(show_spinner=False)
-def lancer_simulations(ix, iy, iz, n_rep, reserve_init_mdh, incr,
+def lancer_simulations(version, ix, iy, iz, n_rep, reserve_init_mdh, incr,
                        age_max, fact_emp, rec_min, rec_max, augm):
     """Lance S1 (baseline figé) et S2 (réforme paramétrable) et renvoie les résultats."""
     reserve_init = reserve_init_mdh * 1e6
@@ -324,10 +329,10 @@ with st.sidebar:
 # Recalcul automatique dès qu'un paramètre change (résultats mis en cache)
 custom_s2 = (age_max != 70 or augm_pct != 10 or fact_emp != 1.0
              or rec_min != 300 or rec_max != 600)
-sig = (ix, iy, iz, n_rep, reserve_init, incr, age_max, fact_emp, rec_min, rec_max, augm_pct)
+sig = (MOTEUR_VERSION, ix, iy, iz, n_rep, reserve_init, incr, age_max, fact_emp, rec_min, rec_max, augm_pct)
 if lancer or st.session_state.get("sig") != sig:
     prog = st.sidebar.progress(0.0, text="Simulation en cours…")
-    raw = lancer_simulations(ix, iy, iz, n_rep, reserve_init, incr,
+    raw = lancer_simulations(MOTEUR_VERSION, ix, iy, iz, n_rep, reserve_init, incr,
                              age_max, fact_emp, rec_min, rec_max, augm_pct / 100.0)
     prog.progress(1.0, text="Terminé ✓")
     st.session_state["data"] = raw
