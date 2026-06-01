@@ -1,0 +1,22 @@
+# Environnement virtuel
+.venv/
+venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Sorties générées
+outputs/
+
+# Secrets Streamlit (ne jamais committer)
+.streamlit/secrets.toml
+
+# OS / éditeurs
+.DS_Store
+.idea/
+.vscode/
+
+# Rapport PDF (contient les noms sur la page de garde) — exclu par défaut du dépôt public
+RapportSimulation-Version1.pdf
