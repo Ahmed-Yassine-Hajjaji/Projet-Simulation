@@ -274,44 +274,54 @@ class CaisseRetraite:
 
     # ── Simulation d'une année ───────────────────────────────────────────────
 
-    def simuler_annee(self, annee: int) -> dict:
+    def simuler_annee(self, annee: int, annee_initiale: bool = False) -> dict:
         """
         Effectue toutes les opérations d'une année et retourne les indicateurs.
+
+        annee_initiale=True : année de référence (2026). On photographie l'état
+        initial de la caisse (10 000 actifs · 3 000 retraités · salaires d'origine)
+        sans appliquer les modifications dynamiques (avancement des salaires,
+        vieillissement, départs en retraite, recrutements). Ces modifications ne
+        commencent qu'à partir de l'année suivante (2027).
         """
-        # 1. Avancement des salaires (début janvier)
-        self.appliquer_avancement(annee)
+        if not annee_initiale:
+            # 1. Avancement des salaires (début janvier)
+            self.appliquer_avancement(annee)
 
-        # 2. Vieillissement des employés
-        for emp in self.employes:
-            emp.age += 1
+            # 2. Vieillissement des employés
+            for emp in self.employes:
+                emp.age += 1
 
-        # 3. Identifier les nouveaux retraités
-        nouveaux_retraites = []
-        rester_actif = []
+            # 3. Identifier les nouveaux retraités
+            nouveaux_retraites = []
+            rester_actif = []
 
-        for emp in self.employes:
-            doit_partir = False
+            for emp in self.employes:
+                doit_partir = False
 
-            if self.scenario == 1:
-                doit_partir = emp.age >= 63
-            else:
-                if emp.age >= self.age_depart_max:
-                    doit_partir = True
-                elif emp.age >= 63:
-                    # Décide s'il prolonge ou non
-                    doit_partir = not self._veut_prolonger(emp, annee)
+                if self.scenario == 1:
+                    doit_partir = emp.age >= 63
                 else:
-                    doit_partir = False
+                    if emp.age >= self.age_depart_max:
+                        doit_partir = True
+                    elif emp.age >= 63:
+                        # Décide s'il prolonge ou non
+                        doit_partir = not self._veut_prolonger(emp, annee)
+                    else:
+                        doit_partir = False
 
-            if doit_partir:
-                pension = self._calculer_pension(emp, annee)
-                nouveaux_retraites.append(Retraite(id=emp.id,
-                                                   pension_mensuelle=pension))
-            else:
-                rester_actif.append(emp)
+                if doit_partir:
+                    pension = self._calculer_pension(emp, annee)
+                    nouveaux_retraites.append(Retraite(id=emp.id,
+                                                       pension_mensuelle=pension))
+                else:
+                    rester_actif.append(emp)
 
-        self.retraites.extend(nouveaux_retraites)
-        self.employes = rester_actif
+            self.retraites.extend(nouveaux_retraites)
+            self.employes = rester_actif
+        else:
+            # Année initiale : aucune modification, on conserve l'état d'origine.
+            nouveaux_retraites = []
 
         # 4. Calcul des cotisations annuelles
         total_cotisations = sum(self._cotisation_annuelle(e) for e in self.employes)
@@ -323,29 +333,32 @@ class CaisseRetraite:
         self.reserve += total_cotisations - total_pensions
 
         # 7. Nouveaux recrutés (comptabilisés en janvier de l'année suivante)
-        if self.scenario == 1:
-            lo = self.recrut_min if self.recrut_min is not None else 250
-            hi = self.recrut_max if self.recrut_max is not None else 400
-        else:
-            lo = self.recrut_min if self.recrut_min is not None else 300
-            hi = self.recrut_max if self.recrut_max is not None else 600
-        nb_recr = self.gen.entier_uniforme(lo, hi)
+        #    Aucun recrutement durant l'année initiale (modifications dès 2027).
+        nb_recr = 0
+        if not annee_initiale:
+            if self.scenario == 1:
+                lo = self.recrut_min if self.recrut_min is not None else 250
+                hi = self.recrut_max if self.recrut_max is not None else 400
+            else:
+                lo = self.recrut_min if self.recrut_min is not None else 300
+                hi = self.recrut_max if self.recrut_max is not None else 600
+            nb_recr = self.gen.entier_uniforme(lo, hi)
 
-        nouveaux_employes = []
-        for _ in range(nb_recr):
-            self._id_counter += 1
-            age_emb = self.gen.continu_tronque(TRANCHES_AGE_EMBAUCHE, FREQS_AGE_EMBAUCHE)
-            sal_emb = self.gen.continu_tronque(TRANCHES_SAL_EMBAUCHE, FREQS_SAL_EMBAUCHE)
-            genre = 'H' if self.gen.suivant() < 0.55 else 'F'
-            nouveaux_employes.append(Employe(
-                id=self._id_counter,
-                age=age_emb,
-                salaire=sal_emb,
-                annee_embauche=annee + 1,  # recrutés pour l'année suivante
-                genre=genre
-            ))
-        # Ils rejoignent en janvier de l'année suivante
-        self.employes.extend(nouveaux_employes)
+            nouveaux_employes = []
+            for _ in range(nb_recr):
+                self._id_counter += 1
+                age_emb = self.gen.continu_tronque(TRANCHES_AGE_EMBAUCHE, FREQS_AGE_EMBAUCHE)
+                sal_emb = self.gen.continu_tronque(TRANCHES_SAL_EMBAUCHE, FREQS_SAL_EMBAUCHE)
+                genre = 'H' if self.gen.suivant() < 0.55 else 'F'
+                nouveaux_employes.append(Employe(
+                    id=self._id_counter,
+                    age=age_emb,
+                    salaire=sal_emb,
+                    annee_embauche=annee + 1,  # recrutés pour l'année suivante
+                    genre=genre
+                ))
+            # Ils rejoignent en janvier de l'année suivante
+            self.employes.extend(nouveaux_employes)
 
         # 8. Calcul des indicateurs spécifiques scénario 2
         plus63       = sum(1 for e in self.employes if e.age > 63)
@@ -409,7 +422,8 @@ class Simulation:
 
             annee_resultats = []
             for annee in self.ANNEES:
-                res = caisse.simuler_annee(annee)
+                # 2026 = année initiale (valeurs d'origine) ; modifications dès 2027.
+                res = caisse.simuler_annee(annee, annee_initiale=(annee == self.ANNEES[0]))
                 annee_resultats.append(res)
 
             self.resultats.append(annee_resultats)

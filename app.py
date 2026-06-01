@@ -245,6 +245,8 @@ def agg(df, col):
     g = df.groupby("annee")[col]
     n = df["rep"].nunique()
     out = g.agg(["mean", "std"]).reset_index()
+    # Avec une seule réplication, l'écart-type est indéfini (NaN) → 0 par convention.
+    out["std"] = out["std"].fillna(0.0)
     out["demi_ic"] = 1.96 * out["std"] / math.sqrt(n)
     return out
 
@@ -287,7 +289,7 @@ with st.sidebar:
     st.markdown("### ⚙️ Paramètres de simulation")
     st.caption("Ajustez les paramètres puis lancez la simulation.")
 
-    n_rep = st.slider("Nombre de réplications (Monte-Carlo)", 5, 100, 40, step=5)
+    n_rep = st.slider("Nombre de réplications (Monte-Carlo)", 1, 100, 40, step=1)
     reserve_init = st.slider("Réserve initiale (Mdh)", 0, 1000, 200, step=10)
 
     with st.expander("🔧 Réforme sur mesure (S2)"):
@@ -639,6 +641,31 @@ with tab5:
     recap["Réserve S2 (Mdh)"] = mdh(agg(df2, "Reserve")["mean"]).round(1).values
     recap["Écart (Mdh)"] = (recap["Réserve S2 (Mdh)"] - recap["Réserve S1 (Mdh)"]).round(1)
     st.dataframe(recap, width='stretch', hide_index=True)
+
+    st.markdown("#### Évolution de tous les paramètres au fil des années")
+    st.caption("Moyennes annuelles de l'ensemble des indicateurs, regroupées dans un seul tableau. "
+               "2026 correspond aux valeurs initiales ; les modifications commencent en 2027.")
+    sc_p = st.radio("Scénario à afficher", ["Scénario 1 — Actuel", "Scénario 2 — Réforme"],
+                    horizontal=True, key="params_table_sc")
+    dfp = df1 if sc_p.startswith("Scénario 1") else df2
+
+    params = pd.DataFrame({"Année": ANNEES})
+    cols_int = [("TotEmp", "Actifs"), ("TotRet", "Retraités"),
+                ("NouvRet", "Nouv. retraités"), ("NouvRec", "Nouv. recrutés")]
+    if sc_p.startswith("Scénario 2"):
+        cols_int += [("Plus63", ">63 ans"), ("Plus63H", ">63 H"), ("Plus63F", ">63 F")]
+    for col, lab in cols_int:
+        params[lab] = agg(dfp, col)["mean"].round(0).astype(int).values
+    params["Cotisations (Mdh)"] = mdh(agg(dfp, "TotCotis")["mean"]).round(1).values
+    params["Pensions (Mdh)"] = mdh(agg(dfp, "TotPens")["mean"]).round(1).values
+    params["Réserve (Mdh)"] = mdh(agg(dfp, "Reserve")["mean"]).round(1).values
+    ratio_an = agg(dfp, "TotRet")["mean"].values / agg(dfp, "TotEmp")["mean"].values
+    params["Ratio ret./actif"] = ratio_an.round(2)
+    st.dataframe(params, width='stretch', hide_index=True)
+    st.download_button("⬇️ Télécharger ce tableau (CSV)",
+                       params.to_csv(index=False).encode("utf-8"),
+                       f"parametres_par_annee_{'s1' if sc_p.startswith('Scénario 1') else 's2'}.csv",
+                       "text/csv", width='stretch')
 
     st.markdown("#### Détail par réplication")
     sc_d = st.selectbox("Scénario", ["Scénario 1", "Scénario 2"])
